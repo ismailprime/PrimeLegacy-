@@ -9,82 +9,115 @@ const client = new Client({
   ]
 });
 
-// 💾 XP verisini dosyadan oku (kalıcı sistem)
-const dataFile = "./xp.json";
-let xpData = fs.existsSync(dataFile)
-  ? JSON.parse(fs.readFileSync(dataFile))
+// 💾 veri dosyası
+const file = "./data.json";
+
+let data = fs.existsSync(file)
+  ? JSON.parse(fs.readFileSync(file))
   : {};
 
-// 🧠 Küfür listesi
-const badWords = ["salak", "mal", "gerizekalı", "aptal"];
+// 🧠 default kullanıcı
+function getUser(id) {
+  if (!data[id]) {
+    data[id] = {
+      xp: 0,
+      coins: 0,
+      warns: 0
+    };
+  }
+  return data[id];
+}
 
-// 📊 Level sistemi
-function getLevel(xp) {
+// 💾 kaydet
+function save() {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+// 📊 level sistemi
+function level(xp) {
   return Math.floor(xp / 100);
 }
 
-// 💾 kayıt fonksiyonu
-function saveData() {
-  fs.writeFileSync(dataFile, JSON.stringify(xpData, null, 2));
-}
+// 🚨 küfür listesi
+const badWords = ["salak", "mal", "aptal", "gerizekalı" "oruspu", "kahpe", "götveren", "sikeyim", "sikim", "şerefsiz", "anneni sikeyim",];
+
+// ⏳ spam engel
+const cooldown = new Set();
 
 client.on("ready", () => {
   console.log(`Bot hazır: ${client.user.tag}`);
 });
 
-// 🎮 mesaj sistemi
-client.on("messageCreate", (message) => {
-  if (message.author.bot) return;
+client.on("messageCreate", async (msg) => {
+  if (msg.author.bot) return;
 
-  const id = message.author.id;
-  const content = message.content.toLowerCase();
+  const id = msg.author.id;
+  const content = msg.content.toLowerCase();
 
-  // 🚨 KÜFÜR ENGELLEME
+  const user = getUser(id);
+
+  // 🚫 spam koruma
+  if (cooldown.has(id)) return;
+  cooldown.add(id);
+  setTimeout(() => cooldown.delete(id), 2000);
+
+  // 🚨 küfür sistemi + warn
   if (badWords.some(w => content.includes(w))) {
-    message.delete().catch(() => {});
-    message.channel.send(`${message.author} ⚠️ Küfür yasak!`);
+    user.warns += 1;
+
+    await msg.delete().catch(() => {});
+
+    msg.channel.send(`${msg.author} ⚠️ Küfür yasak! (Warn: ${user.warns}/3)`);
+
+    // 🔥 3 warn = mute
+    if (user.warns >= 3) {
+      const member = msg.member;
+      const role = msg.guild.roles.cache.find(r => r.name === "Muted");
+
+      if (role) {
+        member.roles.add(role);
+        msg.channel.send(`${msg.author} 🚫 Mute yedin!`);
+      }
+
+      user.warns = 0;
+    }
+
+    save();
     return;
   }
 
-  // 💾 XP yoksa oluştur
-  if (!xpData[id]) {
-    xpData[id] = { xp: 0 };
+  // 🎮 XP + coin
+  user.xp += 10;
+  user.coins += 5;
+
+  const lvl = level(user.xp);
+
+  if (user.xp % 100 === 0) {
+    msg.channel.send(`🎉 ${msg.author} level atladı! Level: ${lvl}`);
   }
 
-  // 🎮 XP ekle
-  xpData[id].xp += 10;
+  save();
 
-  const level = getLevel(xpData[id].xp);
-
-  // 🎉 level atlama bildirimi
-  if (xpData[id].xp % 100 === 0) {
-    message.channel.send(
-      `🎉 ${message.author} level atladı! Level: **${level}**`
+  // 📊 !rank
+  if (content === "!rank") {
+    return msg.reply(
+      `📊 Level: ${lvl}\nXP: ${user.xp}\n💰 Coin: ${user.coins}`
     );
   }
 
-  saveData();
-
-  // 📊 !level
-  if (content === "!level") {
-    return message.reply(
-      `📊 Level: **${level}** | XP: **${xpData[id].xp}**`
-    );
-  }
-
-  // 🏆 !top leaderboard
+  // 🏆 !top
   if (content === "!top") {
-    const sorted = Object.entries(xpData)
+    const top = Object.entries(data)
       .sort((a, b) => b[1].xp - a[1].xp)
       .slice(0, 10);
 
-    let msg = "🏆 **TOP XP LİSTESİ**\n\n";
+    let text = "🏆 TOP PLAYERS\n\n";
 
-    sorted.forEach((user, i) => {
-      msg += `#${i + 1} <@${user[0]}> - XP: ${user[1].xp}\n`;
+    top.forEach((u, i) => {
+      text += `#${i + 1} <@${u[0]}> - XP: ${u[1].xp}\n`;
     });
 
-    message.channel.send(msg);
+    msg.channel.send(text);
   }
 });
 
