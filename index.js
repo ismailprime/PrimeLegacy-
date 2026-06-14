@@ -6,7 +6,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates
   ]
 });
 
@@ -37,23 +38,65 @@ function level(xp) {
 }
 
 // 🚨 küfür listesi
-const badWords = ["salak","mal","aptal","gerizekalı","oç","amk","siktir","kahpe"];
+const badWords = [
+  "salak",
+  "mal",
+  "aptal",
+  "gerizekalı",
+  "embesil",
+  "dangalak",
+  "yavşak",
+  "pezevenk",
+  "şerefsiz",
+  "piç",
+  "pic",
+  "oç",
+  "oc",
+  "amk",
+  "aq",
+  "amq",
+  "siktir",
+  "sikik",
+  "sikim",
+  "sikeyim",
+  "göt",
+  "götveren",
+  "kahpe",
+  "orospu",
+  "oruspu",
+  "ibne",
+  "ibneci",
+  "lavuk",
+  "gerizeka",
+  "malmısın",
+  "amına",
+  "amkç",
+  "mk",
+  "sg"
+];
+];
 
-// 🏆 rol sistemi (15 level)
+// 🏆 level rolleri (15 level)
 const levelRoles = {
   15: "çaylak",
-  30: "kıdemli",
-  45: "sadık",
+  30: "gelişmiş",
+  45: "usta",
   60: "profesyonel",
-  75: "prime",
-  90: "ELİT"
+  75: "sadık dost",
+  90: "dost"
+};
+
+// 🛒 shop
+const shop = {
+  vip: { price: 1000, role: "VIP" },
+  pro: { price: 2500, role: "PRO" },
+  prime: { price: 25000, role: "PRİME" }
 };
 
 client.on("ready", () => {
-  console.log("Bot hazır!");
+  console.log(`Bot hazır: ${client.user.tag}`);
 });
 
-// ================= MAIN =================
 client.on("messageCreate", async (msg) => {
   if (msg.author.bot) return;
 
@@ -67,7 +110,6 @@ client.on("messageCreate", async (msg) => {
 
   const lvl = level(user.xp);
 
-  // 🎉 level rol
   if (user.xp % 100 === 0) {
     msg.channel.send(`🎉 ${msg.author} Level atladı: **${lvl}**`);
 
@@ -83,16 +125,17 @@ client.on("messageCreate", async (msg) => {
     user.warns += 1;
     await msg.delete().catch(() => {});
 
-    msg.channel.send(`⚠️ ${msg.author} Küfür! Warn: ${user.warns}/3`);
+    msg.channel.send(`⚠️ ${msg.author} Küfür! (${user.warns}/3)`);
 
     if (user.warns >= 3) {
       const muteRole = msg.guild.roles.cache.find(r => r.name === "Muted");
       if (muteRole) {
         msg.member.roles.add(muteRole);
-        msg.channel.send(`🚫 ${msg.author} 1 saat mute!`);
+        msg.channel.send(`🚫 ${msg.author} 1 saat mute`);
       }
       user.warns = 0;
     }
+
     save();
     return;
   }
@@ -117,12 +160,10 @@ client.on("messageCreate", async (msg) => {
 
   // ================= COMMANDS =================
 
-  // 📊 rank
   if (content === "!rank") {
     return msg.reply(`📊 Level: ${lvl} | XP: ${user.xp} | 💰 ${user.coins}`);
   }
 
-  // 🏆 top
   if (content === "!top") {
     const top = Object.entries(data)
       .sort((a, b) => b[1].xp - a[1].xp)
@@ -136,28 +177,68 @@ client.on("messageCreate", async (msg) => {
     msg.channel.send(text);
   }
 
-  // 🎁 daily
   if (content === "!daily") {
-    if (now - user.daily < 86400000) {
-      return msg.reply("⏳ 24 saat dolmadan alamazsın!");
-    }
+    if (now - user.daily < 86400000)
+      return msg.reply("⏳ 24 saat dolmadı!");
 
     user.coins += 500;
     user.daily = now;
-
     msg.reply("🎁 500 coin aldın!");
   }
 
-  // 🪙 coinflip
-  if (content.startsWith("!coinflip")) {
-    const result = Math.random() < 0.5 ? "TURA" : "YAZI";
-    msg.reply(`🪙 Sonuç: **${result}**`);
+  if (content === "!coinflip") {
+    const res = Math.random() < 0.5 ? "TURA" : "YAZI";
+    msg.reply(`🪙 ${res}`);
   }
 
-  // 🔊 sestop (basit sayaç)
   if (content === "!sestop") {
-    const voiceCount = msg.guild.members.cache.filter(m => m.voice.channel).size;
-    msg.channel.send(`🔊 Voice'da: ${voiceCount} kişi`);
+    const count = msg.guild.members.cache.filter(m => m.voice.channel).size;
+    msg.channel.send(`🔊 Voice: ${count}`);
+  }
+
+  // ================= SHOP =================
+  if (content === "!shop") {
+    msg.channel.send(
+      "🛒 SHOP:\n" +
+      Object.entries(shop)
+        .map(([k, v]) => `${k} - ${v.price} coin`)
+        .join("\n")
+    );
+  }
+
+  if (content.startsWith("!buy")) {
+    const item = content.split(" ")[1];
+    const product = shop[item];
+
+    if (!product) return msg.reply("❌ item yok");
+    if (user.coins < product.price) return msg.reply("❌ coin yok");
+
+    const role = msg.guild.roles.cache.find(r => r.name === product.role);
+    if (!role) return msg.reply("❌ rol yok");
+
+    user.coins -= product.price;
+    msg.member.roles.add(role).catch(() => {});
+
+    msg.reply(`✅ ${product.role} alındı`);
+  }
+
+  // ================= ADMIN XP =================
+  if (content.startsWith("!addxp")) {
+    if (msg.author.id !== "BURAYA_ID") return;
+
+    const args = content.split(" ");
+    const target = msg.mentions.users.first();
+    const amount = parseInt(args[2]);
+
+    if (!target || isNaN(amount))
+      return msg.reply("!addxp @user 100");
+
+    const u = getUser(target.id);
+    u.xp += amount;
+
+    msg.channel.send(`💎 ${target} +${amount} XP`);
+
+    save();
   }
 
   save();
