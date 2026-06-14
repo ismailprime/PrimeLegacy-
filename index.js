@@ -1,142 +1,64 @@
-const {
-  Client,
-  GatewayIntentBits,
-  Partials,
-  EmbedBuilder,
-} = require("discord.js");
+const { Client, GatewayIntentBits } = require("discord.js");
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers,
-  ],
-  partials: [Partials.Channel],
+    GatewayIntentBits.MessageContent
+  ]
 });
 
-const prefix = "!";
-
-// Basit XP sistemi
+// XP sistemi (RAM’de tutulur)
 const xp = {};
-const levels = {};
+const cooldown = new Set();
 
-client.once("ready", () => {
-  console.log(`${client.user.tag} aktif!`);
+// Küfür listesi (istersen çoğaltabiliriz)
+const badWords = ["salak", "mal", "gerizekalı", "aptal"];
+
+// Level hesaplama
+function getLevel(xp) {
+  return Math.floor(xp / 100);
+}
+
+client.on("ready", () => {
+  console.log(`Bot hazır: ${client.user.tag}`);
 });
 
-// Üye girince hoşgeldin
-client.on("guildMemberAdd", (member) => {
-  const channel = member.guild.systemChannel;
-
-  if (channel) {
-    channel.send(`👋 Hoş geldin ${member}!`);
-  }
-});
-
-client.on("messageCreate", async (message) => {
+client.on("messageCreate", (message) => {
   if (message.author.bot) return;
 
-  // XP sistemi
   const userId = message.author.id;
+  const content = message.content.toLowerCase();
 
+  // 🚨 KÜFÜR ENGELLEME
+  if (badWords.some(word => content.includes(word))) {
+    message.delete().catch(() => {});
+    message.channel.send(`${message.author}, küfür yasak! ⚠️`);
+    return;
+  }
+
+  // ⏳ spam XP engeli (2 sn cooldown)
+  if (cooldown.has(userId)) return;
+  cooldown.add(userId);
+  setTimeout(() => cooldown.delete(userId), 2000);
+
+  // 🎮 XP ekleme
   if (!xp[userId]) xp[userId] = 0;
-  if (!levels[userId]) levels[userId] = 1;
 
-  xp[userId] += Math.floor(Math.random() * 10) + 5;
+  xp[userId] += 10;
 
-  const nextLevel = levels[userId] * 100;
+  const level = getLevel(xp[userId]);
 
-  if (xp[userId] >= nextLevel) {
-    levels[userId]++;
-    xp[userId] = 0;
-
+  // 🎉 Level atlama mesajı
+  if (xp[userId] % 100 === 0) {
     message.channel.send(
-      `🎉 ${message.author} seviye atladı! Yeni level: ${levels[userId]}`
+      `🎉 ${message.author} level atladı! Level: **${level}**`
     );
   }
 
-  // Komut değilse devam etme
-  if (!message.content.startsWith(prefix)) return;
-
-  const args = message.content.slice(prefix.length).trim().split(/ +/);
-  const command = args.shift().toLowerCase();
-
-  // Ping
-  if (command === "ping") {
-    return message.channel.send("🏓 Pong!");
-  }
-
-  // Yardım
-  if (command === "yardım") {
-    const embed = new EmbedBuilder()
-      .setTitle("🤖 Bot Komutları")
-      .setDescription(`
-!ping
-!yardım
-!profil
-!clear
-!kick
-      `)
-      .setColor("Blue");
-
-    return message.channel.send({ embeds: [embed] });
-  }
-
-  // Profil
-  if (command === "profil") {
-    const embed = new EmbedBuilder()
-      .setTitle(`${message.author.username} Profili`)
-      .addFields(
-        {
-          name: "⭐ Level",
-          value: `${levels[userId]}`,
-          inline: true,
-        },
-        {
-          name: "⚡ XP",
-          value: `${xp[userId]}/100`,
-          inline: true,
-        }
-      )
-      .setThumbnail(message.author.displayAvatarURL())
-      .setColor("Green");
-
-    return message.channel.send({ embeds: [embed] });
-  }
-
-  // Mesaj silme
-  if (command === "clear") {
-    if (!message.member.permissions.has("ManageMessages")) {
-      return message.channel.send("❌ Yetkin yok!");
-    }
-
-    const amount = parseInt(args[0]);
-
-    if (!amount) {
-      return message.channel.send("Kaç mesaj silinecek?");
-    }
-
-    await message.channel.bulkDelete(amount, true);
-
-    return message.channel.send(`🧹 ${amount} mesaj silindi.`);
-  }
-
-  // Kick
-  if (command === "kick") {
-    if (!message.member.permissions.has("KickMembers")) {
-      return message.channel.send("❌ Yetkin yok!");
-    }
-
-    const member = message.mentions.members.first();
-
-    if (!member) {
-      return message.channel.send("Bir kullanıcı etiketle!");
-    }
-
-    await member.kick();
-
-    return message.channel.send(`👢 ${member.user.tag} sunucudan atıldı.`);
+  // 🧪 test komutu
+  if (content === "!level") {
+    message.reply(`Levelin: **${level}** | XP: **${xp[userId]}**`);
   }
 });
 
