@@ -1,4 +1,5 @@
 const { Client, GatewayIntentBits } = require("discord.js");
+const fs = require("fs");
 
 const client = new Client({
   intents: [
@@ -8,57 +9,82 @@ const client = new Client({
   ]
 });
 
-// XP sistemi (RAM’de tutulur)
-const xp = {};
-const cooldown = new Set();
+// 💾 XP verisini dosyadan oku (kalıcı sistem)
+const dataFile = "./xp.json";
+let xpData = fs.existsSync(dataFile)
+  ? JSON.parse(fs.readFileSync(dataFile))
+  : {};
 
-// Küfür listesi (istersen çoğaltabiliriz)
+// 🧠 Küfür listesi
 const badWords = ["salak", "mal", "gerizekalı", "aptal"];
 
-// Level hesaplama
+// 📊 Level sistemi
 function getLevel(xp) {
   return Math.floor(xp / 100);
+}
+
+// 💾 kayıt fonksiyonu
+function saveData() {
+  fs.writeFileSync(dataFile, JSON.stringify(xpData, null, 2));
 }
 
 client.on("ready", () => {
   console.log(`Bot hazır: ${client.user.tag}`);
 });
 
+// 🎮 mesaj sistemi
 client.on("messageCreate", (message) => {
   if (message.author.bot) return;
 
-  const userId = message.author.id;
+  const id = message.author.id;
   const content = message.content.toLowerCase();
 
   // 🚨 KÜFÜR ENGELLEME
-  if (badWords.some(word => content.includes(word))) {
+  if (badWords.some(w => content.includes(w))) {
     message.delete().catch(() => {});
-    message.channel.send(`${message.author}, küfür yasak! ⚠️`);
+    message.channel.send(`${message.author} ⚠️ Küfür yasak!`);
     return;
   }
 
-  // ⏳ spam XP engeli (2 sn cooldown)
-  if (cooldown.has(userId)) return;
-  cooldown.add(userId);
-  setTimeout(() => cooldown.delete(userId), 2000);
+  // 💾 XP yoksa oluştur
+  if (!xpData[id]) {
+    xpData[id] = { xp: 0 };
+  }
 
-  // 🎮 XP ekleme
-  if (!xp[userId]) xp[userId] = 0;
+  // 🎮 XP ekle
+  xpData[id].xp += 10;
 
-  xp[userId] += 10;
+  const level = getLevel(xpData[id].xp);
 
-  const level = getLevel(xp[userId]);
-
-  // 🎉 Level atlama mesajı
-  if (xp[userId] % 100 === 0) {
+  // 🎉 level atlama bildirimi
+  if (xpData[id].xp % 100 === 0) {
     message.channel.send(
       `🎉 ${message.author} level atladı! Level: **${level}**`
     );
   }
 
-  // 🧪 test komutu
+  saveData();
+
+  // 📊 !level
   if (content === "!level") {
-    message.reply(`Levelin: **${level}** | XP: **${xp[userId]}**`);
+    return message.reply(
+      `📊 Level: **${level}** | XP: **${xpData[id].xp}**`
+    );
+  }
+
+  // 🏆 !top leaderboard
+  if (content === "!top") {
+    const sorted = Object.entries(xpData)
+      .sort((a, b) => b[1].xp - a[1].xp)
+      .slice(0, 10);
+
+    let msg = "🏆 **TOP XP LİSTESİ**\n\n";
+
+    sorted.forEach((user, i) => {
+      msg += `#${i + 1} <@${user[0]}> - XP: ${user[1].xp}\n`;
+    });
+
+    message.channel.send(msg);
   }
 });
 
