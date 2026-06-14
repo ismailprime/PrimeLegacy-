@@ -5,121 +5,162 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
-// 💾 veri dosyası
+// 💾 data
 const file = "./data.json";
+let data = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : {};
 
-let data = fs.existsSync(file)
-  ? JSON.parse(fs.readFileSync(file))
-  : {};
+function save() {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
 
-// 🧠 default kullanıcı
 function getUser(id) {
   if (!data[id]) {
     data[id] = {
       xp: 0,
       coins: 0,
-      warns: 0
+      warns: 0,
+      spam: 0,
+      lastMsg: 0,
+      daily: 0
     };
   }
   return data[id];
 }
 
-// 💾 kaydet
-function save() {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
-
-// 📊 level sistemi
 function level(xp) {
   return Math.floor(xp / 100);
 }
 
 // 🚨 küfür listesi
-const badWords = ["salak", "mal", "aptal", "gerizekalı",
-                "oruspu", "kahpe", "götveren", "sikeyim", "sikim", "şerefsiz", "anneni sikeyim", "amk", "awk"];
+const badWords = ["salak","mal","aptal","gerizekalı","oç","amk","siktir","kahpe"];
 
-// ⏳ spam engel
-const cooldown = new Set();
+// 🏆 rol sistemi (15 level)
+const levelRoles = {
+  15: "çaylak",
+  30: "kıdemli",
+  45: "sadık",
+  60: "profesyonel",
+  75: "prime",
+  90: "ELİT"
+};
 
 client.on("ready", () => {
-  console.log(`Bot hazır: ${client.user.tag}`);
+  console.log("Bot hazır!");
 });
 
+// ================= MAIN =================
 client.on("messageCreate", async (msg) => {
   if (msg.author.bot) return;
 
-  const id = msg.author.id;
+  const user = getUser(msg.author.id);
   const content = msg.content.toLowerCase();
+  const now = Date.now();
 
-  const user = getUser(id);
-
-  // 🚫 spam koruma
-  if (cooldown.has(id)) return;
-  cooldown.add(id);
-  setTimeout(() => cooldown.delete(id), 2000);
-
-  // 🚨 küfür sistemi + warn
-  if (badWords.some(w => content.includes(w))) {
-    user.warns += 1;
-
-    await msg.delete().catch(() => {});
-
-    msg.channel.send(`${msg.author} ⚠️ Küfür yasak! (Warn: ${user.warns}/3)`);
-
-    // 🔥 3 warn = mute
-    if (user.warns >= 3) {
-      const member = msg.member;
-      const role = msg.guild.roles.cache.find(r => r.name === "Muted");
-
-      if (role) {
-        member.roles.add(role);
-        msg.channel.send(`${msg.author} 🚫 Mute yedin!`);
-      }
-
-      user.warns = 0;
-    }
-
-    save();
-    return;
-  }
-
-  // 🎮 XP + coin
+  // ================= XP =================
   user.xp += 10;
   user.coins += 5;
 
   const lvl = level(user.xp);
 
+  // 🎉 level rol
   if (user.xp % 100 === 0) {
-    msg.channel.send(`🎉 ${msg.author} level atladı! Level: ${lvl}`);
+    msg.channel.send(`🎉 ${msg.author} Level atladı: **${lvl}**`);
+
+    const roleName = levelRoles[lvl];
+    if (roleName) {
+      const role = msg.guild.roles.cache.find(r => r.name === roleName);
+      if (role) msg.member.roles.add(role).catch(() => {});
+    }
   }
 
-  save();
+  // ================= KÜFÜR =================
+  if (badWords.some(w => content.includes(w))) {
+    user.warns += 1;
+    await msg.delete().catch(() => {});
 
-  // 📊 !rank
+    msg.channel.send(`⚠️ ${msg.author} Küfür! Warn: ${user.warns}/3`);
+
+    if (user.warns >= 3) {
+      const muteRole = msg.guild.roles.cache.find(r => r.name === "Muted");
+      if (muteRole) {
+        msg.member.roles.add(muteRole);
+        msg.channel.send(`🚫 ${msg.author} 1 saat mute!`);
+      }
+      user.warns = 0;
+    }
+    save();
+    return;
+  }
+
+  // ================= SPAM =================
+  if (now - user.lastMsg < 2000) {
+    user.spam += 1;
+
+    if (user.spam >= 4) {
+      const muteRole = msg.guild.roles.cache.find(r => r.name === "Muted");
+      if (muteRole) {
+        msg.member.roles.add(muteRole);
+        msg.channel.send(`🚫 ${msg.author} spam mute (10 dk)`);
+      }
+      user.spam = 0;
+    }
+  } else {
+    user.spam = 0;
+  }
+
+  user.lastMsg = now;
+
+  // ================= COMMANDS =================
+
+  // 📊 rank
   if (content === "!rank") {
-    return msg.reply(
-      `📊 Level: ${lvl}\nXP: ${user.xp}\n💰 Coin: ${user.coins}`
-    );
+    return msg.reply(`📊 Level: ${lvl} | XP: ${user.xp} | 💰 ${user.coins}`);
   }
 
-  // 🏆 !top
+  // 🏆 top
   if (content === "!top") {
     const top = Object.entries(data)
       .sort((a, b) => b[1].xp - a[1].xp)
       .slice(0, 10);
 
-    let text = "🏆 TOP PLAYERS\n\n";
-
+    let text = "🏆 TOP\n\n";
     top.forEach((u, i) => {
       text += `#${i + 1} <@${u[0]}> - XP: ${u[1].xp}\n`;
     });
 
     msg.channel.send(text);
   }
+
+  // 🎁 daily
+  if (content === "!daily") {
+    if (now - user.daily < 86400000) {
+      return msg.reply("⏳ 24 saat dolmadan alamazsın!");
+    }
+
+    user.coins += 500;
+    user.daily = now;
+
+    msg.reply("🎁 500 coin aldın!");
+  }
+
+  // 🪙 coinflip
+  if (content.startsWith("!coinflip")) {
+    const result = Math.random() < 0.5 ? "TURA" : "YAZI";
+    msg.reply(`🪙 Sonuç: **${result}**`);
+  }
+
+  // 🔊 sestop (basit sayaç)
+  if (content === "!sestop") {
+    const voiceCount = msg.guild.members.cache.filter(m => m.voice.channel).size;
+    msg.channel.send(`🔊 Voice'da: ${voiceCount} kişi`);
+  }
+
+  save();
 });
 
 client.login(process.env.TOKEN);
