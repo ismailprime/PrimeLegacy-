@@ -39,7 +39,8 @@ function level(xp) {
 }
 
 // 🚨 küfür listesi
-const badWords = ["salak", "mal", "aptal", "gerizekalı" "oruspu", "kahpe", "götveren", "sikeyim", "sikim", "şerefsiz", "anneni sikeyim",];
+const badWords = ["salak", "mal", "aptal", "gerizekalı",
+                "oruspu", "kahpe", "götveren", "sikeyim", "sikim", "şerefsiz", "anneni sikeyim",];
 
 // ⏳ spam engel
 const cooldown = new Set();
